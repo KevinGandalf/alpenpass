@@ -88,7 +88,7 @@ echo "==> VPN-Typ auswählen:"
 echo "1 = OpenVPN"
 echo "2 = WireGuard"
 echo "3 = PIA"
-echo "4 = AdGuardVPN"
+echo "4 = AdGuardVPN (Experimentel!)"
 read -rp "Auswahl [1-4]: " vpn_type
 
 vpn_if=""  # Interface wird hier dynamisch gesetzt
