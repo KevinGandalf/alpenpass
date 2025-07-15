@@ -75,23 +75,13 @@ net.ipv6.conf.default.disable_ipv6=1
 net.ipv6.conf.lo.disable_ipv6=1
 EOF
 echo "==> sysctl-Konfiguration gespeichert."
-echo ""
-echo "==> Lade sysctl-Konfiguration jetzt sofort..."
-sysctl -p /etc/sysctl.d/99-forwarding.conf
-cho "==> Füge sysctl zu Systemstart hinzu..."
-rc-update add sysctl default
-
 
 # 8. VPN-Typ auswählen und Konfiguration einlesen
 echo ""
 echo "==> VPN-Typ auswählen:"
 echo "1 = OpenVPN"
 echo "2 = WireGuard"
-echo "3 = PIA"
-echo "4 = AdGuardVPN"
-read -rp "Auswahl [1-4]: " vpn_type
-
-vpn_if=""  # Interface wird hier dynamisch gesetzt
+read -rp "Auswahl [1/2]: " vpn_type
 
 case "$vpn_type" in
     1)
@@ -103,8 +93,6 @@ case "$vpn_type" in
         rc-update add openvpn default
         rc-service openvpn start
         echo "==> OpenVPN-Konfiguration gespeichert und Dienst gestartet."
-
-        vpn_if="tun0"  # Anpassen falls Interface anders heißt
         ;;
     2)
         echo ""
@@ -115,19 +103,6 @@ case "$vpn_type" in
         rc-update add wg-quick@wg0 default
         echo "==> WireGuard-Konfiguration gespeichert."
         echo "==> Der WireGuard-Dienst startet beim nächsten Systemstart automatisch."
-
-        vpn_if="wg0"
-        ;;
-    3)
-        echo "==> Starte PIA Installations-Skript..."
-        /opt/alpenpass/helper/provider/pia/pia_install.sh
-        # Wenn PIA ein anderes Interface nutzt, hier anpassen:
-        vpn_if="pia0"
-        ;;
-    4)
-        echo "==> Starte AdGuardVPN Installations-Skript..."
-        /opt/alpenpass/helper/provider/adguardvpn/adguardvpn_experimentell.sh
-        vpn_if="tun0"
         ;;
     *)
         echo "==> Ungültige Auswahl. Abbruch."
@@ -165,7 +140,7 @@ cat << EOF > /etc/iptables/rules.v4
 :INPUT ACCEPT [0:0]
 :FORWARD ACCEPT [0:0]
 :OUTPUT ACCEPT [0:0]
--A FORWARD -s ${ip_addr}/32 -i ${second_if} -o ${vpn_if} -j ACCEPT
+-A FORWARD -s ${ip_addr}/32 -i ${second_if} -o wg0 -j ACCEPT
 -A FORWARD -s ${ip_addr}/32 -p icmp -m icmp --icmp-type 8 -j ACCEPT
 -A FORWARD -d ${ip_addr}/32 -p icmp -m icmp --icmp-type 0 -j ACCEPT
 -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
@@ -175,7 +150,7 @@ COMMIT
 :INPUT ACCEPT [0:0]
 :OUTPUT ACCEPT [0:0]
 :POSTROUTING ACCEPT [0:0]
--A POSTROUTING -o ${vpn_if} -j MASQUERADE
+-A POSTROUTING -o wg0 -j MASQUERADE
 COMMIT
 EOF
 
