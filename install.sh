@@ -78,9 +78,8 @@ echo "==> sysctl-Konfiguration gespeichert."
 echo ""
 echo "==> Lade sysctl-Konfiguration jetzt sofort..."
 sysctl -p /etc/sysctl.d/99-forwarding.conf
-cho "==> Füge sysctl zu Systemstart hinzu..."
+echo "==> Füge sysctl zu Systemstart hinzu..."
 rc-update add sysctl default
-
 
 # 8. VPN-Typ auswählen und Konfiguration einlesen
 echo ""
@@ -91,7 +90,7 @@ echo "3 = PIA"
 echo "4 = AdGuardVPN (Experimentel!)"
 read -rp "Auswahl [1-4]: " vpn_type
 
-vpn_if=""  # Interface wird hier dynamisch gesetzt
+vpn_if=""
 
 case "$vpn_type" in
     1)
@@ -100,47 +99,66 @@ case "$vpn_type" in
         mkdir -p /etc/openvpn
         cat > /etc/openvpn/client.conf
 
+        echo "==> Erstelle OpenVPN Autostart-Skript /etc/local.d/openvpn.start ..."
+        mkdir -p /etc/local.d
+        cat << 'EOF' > /etc/local.d/openvpn.start
+#!/bin/sh
+rc-service openvpn start
+EOF
+        chmod +x /etc/local.d/openvpn.start
+
         rc-update add openvpn default
+        rc-update add local default
+
         rc-service openvpn start
         echo "==> OpenVPN-Konfiguration gespeichert und Dienst gestartet."
-
-        vpn_if="tun0"  # Anpassen falls Interface anders heißt
+        vpn_if="tun0"
         ;;
+
     2)
         echo ""
         echo "==> WireGuard-Konfiguration eingeben (per Paste). Mit ENTER und STRG+D abschließen."
         mkdir -p /etc/wireguard
         cat > /etc/wireguard/wg0.conf
 
-        rc-update add wg-quick@wg0 default
-        echo "==> WireGuard-Konfiguration gespeichert."
-        echo "==> Der WireGuard-Dienst startet beim nächsten Systemstart automatisch."
+        echo "==> Erstelle WireGuard Autostart-Skript /etc/local.d/wg0.start ..."
+        mkdir -p /etc/local.d
+        cat << 'EOF' > /etc/local.d/wg0.start
+#!/bin/sh
+wg-quick up wg0
+EOF
+        chmod +x /etc/local.d/wg0.start
 
+        rc-update add local default
+        wg-quick up wg0
+        echo "==> WireGuard-Konfiguration gespeichert und gestartet."
         vpn_if="wg0"
         ;;
+
     3)
         echo "==> Starte PIA Installations-Skript..."
         /opt/alpenpass/helper/provider/pia/pia_install.sh
-        # Wenn PIA ein anderes Interface nutzt, hier anpassen:
         vpn_if="pia0"
         ;;
+
     4)
         echo "==> Starte AdGuardVPN Installations-Skript..."
         /opt/alpenpass/helper/provider/adguardvpn/adguardvpn_experimentell.sh
         vpn_if="tun0"
         ;;
+
     *)
         echo "==> Ungültige Auswahl. Abbruch."
         exit 1
         ;;
 esac
 
-# 9. sysctl sofort laden
+# 9. sysctl nochmal laden
 echo ""
-echo "==> Lade sysctl-Konfiguration jetzt sofort..."
+echo "==> Lade sysctl-Konfiguration erneut..."
 sysctl -p /etc/sysctl.d/99-forwarding.conf
 
-# 10. SSH-Hostkeys neu generieren (optional)
+# 10. SSH-Hostkeys neu generieren
 echo ""
 echo "==> Möchtest du SSH-Hostkeys neu generieren? (z.B. bei geklonter VM empfohlen) [j/N]:"
 read -r regenerate_ssh_keys
