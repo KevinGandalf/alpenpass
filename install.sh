@@ -53,7 +53,7 @@ fi
 # 5. System aktualisieren und Pakete installieren
 echo "==> System aktualisieren und Pakete installieren..."
 apk update && apk upgrade
-apk add --no-cache openvpn wireguard-tools iptables iptables-openrc bash iproute2 curl wget git htop net-tools
+apk add --no-cache openvpn wireguard-tools iptables iptables-openrc bash iproute2 curl wget git htop net-tools linux-lts nano
 echo "==> Paketinstallation abgeschlossen."
 
 # 6. Speicherplatz und aktive Ports anzeigen
