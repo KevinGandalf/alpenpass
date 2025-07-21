@@ -50,10 +50,23 @@ else
     echo "==> $second_if ist bereits in /etc/network/interfaces vorhanden. Kein Eintrag vorgenommen."
 fi
 
+# 2.5 Speichere die Netzwerkeinstellungen in setup.env
+cat > /opt/alpenpass/setup.env << EOF
+# Automatisch erzeugte Netzwerkeinstellungen
+SECOND_IF=$second_if
+IP_ADDR=$ip_addr
+NETMASK=$netmask
+EOF
+echo "==> Netzwerkeinstellungen in setup.env gespeichert."
+
 # 5. System aktualisieren und Pakete installieren
 echo "==> System aktualisieren und Pakete installieren..."
 apk update && apk upgrade
+<<<<<<< HEAD
 apk add --no-cache openvpn wireguard-tools iptables iptables-openrc bash iproute2 curl wget git htop net-tools linux-lts nano
+=======
+apk add --no-cache openvpn wireguard-tools iptables iptables-openrc bash iproute2 curl wget git htop net-tools nano linux-lts
+>>>>>>> 5d849e7 (Added Support for Strongswan Client, VPN Switch, added nano & linux-lts to install, added setup.env to store Variables, Added Multihop Support via SOCKS5 Proxy)
 echo "==> Paketinstallation abgeschlossen."
 
 # 6. Speicherplatz und aktive Ports anzeigen
@@ -81,16 +94,22 @@ sysctl -p /etc/sysctl.d/99-forwarding.conf
 echo "==> Füge sysctl zu Systemstart hinzu..."
 rc-update add sysctl default
 
+# Variablen für VPN-Interface merken (neu)
+last_vpn_if=""
+
 # 8. VPN-Typ auswählen und Konfiguration einlesen
 echo ""
 echo "==> VPN-Typ auswählen:"
 echo "1 = OpenVPN"
 echo "2 = WireGuard"
 echo "3 = PIA"
-echo "4 = AdGuardVPN (Experimentel!)"
-read -rp "Auswahl [1-4]: " vpn_type
+echo "4 = AdGuardVPN (Experimentell!)"
+echo "5 = Multihop --> VPN --> Socks5 --> Internet"
+echo "6 = IPsec Client (StrongSwan)"
+read -rp "Auswahl [1-6]: " vpn_type
 
 vpn_if=""
+run_socks5_multihop=0
 
 case "$vpn_type" in
     1)
@@ -113,6 +132,7 @@ EOF
         rc-service openvpn start
         echo "==> OpenVPN-Konfiguration gespeichert und Dienst gestartet."
         vpn_if="tun0"
+        last_vpn_if="$vpn_if"  # Interface merken
         ;;
 
     2)
@@ -133,18 +153,40 @@ EOF
         wg-quick up wg0
         echo "==> WireGuard-Konfiguration gespeichert und gestartet."
         vpn_if="wg0"
+        last_vpn_if="$vpn_if"  # Interface merken
         ;;
 
     3)
         echo "==> Starte PIA Installations-Skript..."
         /opt/alpenpass/helper/provider/pia/pia_install.sh
-        vpn_if="pia0"
+        vpn_if="pia"
+        last_vpn_if="$vpn_if"
         ;;
 
     4)
         echo "==> Starte AdGuardVPN Installations-Skript..."
         /opt/alpenpass/helper/provider/adguardvpn/adguardvpn_experimentell.sh
         vpn_if="tun0"
+        last_vpn_if="$vpn_if"
+        ;;
+
+    5)
+        echo "==> Multihop Setup ausgewählt."
+        # Hier setzen wir vpn_if auf das zuletzt gewählte VPN-Interface
+        if [ -n "$last_vpn_if" ]; then
+            vpn_if="$last_vpn_if"
+        else
+            echo "==> Fehler: Multihop wurde gewählt, aber kein VPN-Interface gefunden."
+            exit 1
+        fi
+        run_socks5_multihop=1
+        ;;
+
+    6)
+        echo "==> Starte IPsec Client Setup (StrongSwan)..."
+        /opt/alpenpass/helper/scripts/strongswan_setup.sh
+        vpn_if="ipsec0"  # Annahme: Interface-Name für IPsec
+        last_vpn_if="$vpn_if"
         ;;
 
     *)
@@ -152,6 +194,13 @@ EOF
         exit 1
         ;;
 esac
+
+# VPN-Interface und Multihop-Flag in setup.env speichern
+cat >> /opt/alpenpass/setup.env << EOF
+VPN_IF=$vpn_if
+RUN_SOCKS5_MULTIHOP=$run_socks5_multihop
+EOF
+echo "==> VPN-Interface ($vpn_if) und Multihop-Flag ($run_socks5_multihop) in setup.env gespeichert."
 
 # 9. sysctl nochmal laden
 echo ""
@@ -172,13 +221,14 @@ else
     echo "==> SSH-Hostkeys bleiben unverändert."
 fi
 
-# 11. iptables Setup
-echo ""
-echo "==> IPtables Setup..."
+# 11. iptables Setup (NICHT bei IPsec, da StrongSwan das selbst erledigt)
+if [ "$vpn_type" != "6" ]; then
+    echo ""
+    echo "==> IPtables Setup..."
 
-rc-update add iptables default
+    rc-update add iptables default
 
-cat << EOF > /etc/iptables/rules.v4
+    cat << EOF > /etc/iptables/rules.v4
 *filter
 :INPUT ACCEPT [0:0]
 :FORWARD ACCEPT [0:0]
@@ -197,9 +247,25 @@ COMMIT
 COMMIT
 EOF
 
-iptables-restore < /etc/iptables/rules.v4
-echo "==> iptables-Regeln gesetzt und gespeichert."
+    iptables-restore < /etc/iptables/rules.v4
+    echo "==> iptables-Regeln gesetzt und gespeichert."
+else
+    echo "==> IPtables Setup übersprungen, da IPsec verwendet wird."
+fi
 
-# 12. Abschlussmeldung
+# 12. Multihop Socks5 Script am Ende ausführen (wenn Multihop gewählt)
+if [ "$run_socks5_multihop" -eq 1 ]; then
+    echo ""
+    echo "==> Führe socks5_multihop.sh Script aus..."
+    if [ -x ./socks5_multihop.sh ]; then
+        ./socks5_multihop.sh
+        echo "==> socks5_multihop.sh wurde ausgeführt."
+    else
+        echo "==> Fehler: socks5_multihop.sh Script nicht gefunden oder nicht ausführbar!"
+        exit 1
+    fi
+fi
+
+# 13. Abschlussmeldung
 echo ""
 echo "==> Setup abgeschlossen. Bitte starte das System neu, damit alle Änderungen wirksam werden."
