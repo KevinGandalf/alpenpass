@@ -62,11 +62,7 @@ echo "==> Netzwerkeinstellungen in setup.env gespeichert."
 # 5. System aktualisieren und Pakete installieren
 echo "==> System aktualisieren und Pakete installieren..."
 apk update && apk upgrade
-<<<<<<< HEAD
-apk add --no-cache openvpn wireguard-tools iptables iptables-openrc bash iproute2 curl wget git htop net-tools linux-lts nano
-=======
-apk add --no-cache openvpn wireguard-tools iptables iptables-openrc bash iproute2 curl wget git htop net-tools nano linux-lts
->>>>>>> 5d849e7 (Added Support for Strongswan Client, VPN Switch, added nano & linux-lts to install, added setup.env to store Variables, Added Multihop Support via SOCKS5 Proxy)
+apk add --no-cache openvpn wireguard-tools iptables iptables-openrc bash iproute2 curl wget git htop net-tools nano linux-lts jq bc coreutils gawk
 echo "==> Paketinstallation abgeschlossen."
 
 # 6. Speicherplatz und aktive Ports anzeigen
@@ -104,9 +100,10 @@ echo "1 = OpenVPN"
 echo "2 = WireGuard"
 echo "3 = PIA"
 echo "4 = AdGuardVPN (Experimentell!)"
-echo "5 = Multihop --> VPN --> Socks5 --> Internet"
-echo "6 = IPsec Client (StrongSwan)"
-read -rp "Auswahl [1-6]: " vpn_type
+echo "5 = NordVPN Wireguard"
+echo "6 = Multihop --> VPN --> Socks5 --> Internet"
+echo "7 = IPsec Client (StrongSwan)"
+read -rp "Auswahl [1-7]: " vpn_type
 
 vpn_if=""
 run_socks5_multihop=0
@@ -150,7 +147,8 @@ EOF
         chmod +x /etc/local.d/wg0.start
 
         rc-update add local default
-        wg-quick up wg0
+        # Deaktiviert bis Neustart --> ohne LTS Pakete fehlt der kernelmod
+        #wg-quick up wg0
         echo "==> WireGuard-Konfiguration gespeichert und gestartet."
         vpn_if="wg0"
         last_vpn_if="$vpn_if"  # Interface merken
@@ -171,6 +169,13 @@ EOF
         ;;
 
     5)
+	echo "==> Starte NordVPN Wireguard Script..."
+        /opt/alpenpass/helper/provider/nordvpn/get_nordvpnserver.sh
+        vpn_if="wg0"
+        last_vpn_if="$vpn_if"
+        ;;
+
+    6)
         echo "==> Multihop Setup ausgewählt."
         # Hier setzen wir vpn_if auf das zuletzt gewählte VPN-Interface
         if [ -n "$last_vpn_if" ]; then
@@ -182,7 +187,7 @@ EOF
         run_socks5_multihop=1
         ;;
 
-    6)
+    7)
         echo "==> Starte IPsec Client Setup (StrongSwan)..."
         /opt/alpenpass/helper/scripts/strongswan_setup.sh
         vpn_if="ipsec0"  # Annahme: Interface-Name für IPsec
